@@ -1,0 +1,41 @@
+{
+  "name": "coding-test",
+  "version": "0.0.1",
+  "description": "Create a smart contract that can arbitrage two exchanges",
+  "main": "index.js",
+  "scripts": {
+    "compile": "npx hardhat compile",
+    "coverage": "npx hardhat coverage",
+    "lint": "eslint",
+    "solhint": "solhint -f table contracts/**/*.sol",
+    "test": "npx hardhat test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Tribe3-xyz/coding-test.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Tribe3-xyz/coding-test/issues"
+  },
+  "homepage": "https://github.com/Tribe3-xyz/coding-test",
+  "devDependencies": {
+    "@nomiclabs/hardhat-ethers": "^2.0.1",
+    "@nomiclabs/hardhat-waffle": "^2.0.0",
+    "chai": "^4.2.0",
+    "eslint": "^7.14.0",
+    "ethereum-waffle": "^3.2.1",
+    "ethers": "^5.0.23",
+    "hardhat": "^2.0.4",
+    "prettier": "^2.2.1",
+    "prettier-plugin-solidity": "^1.0.0-beta.1",
+    "solhint": "^3.3.2",
+    "solhint-plugin-prettier": "0.0.5",
+    "solidity-coverage": "^0.7.13"
+  },
+  "dependencies": {
+    "@uniswap/v2-core": "^1.0.1",
+    "@uniswap/v2-periphery": "^1.1.0-beta.0"
+  }
+}
