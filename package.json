@@ -8,7 +8,8 @@
     "coverage": "npx hardhat coverage",
     "lint": "eslint",
     "solhint": "solhint -f table contracts/**/*.sol",
-    "test": "npx hardhat test"
+    "run-with-gsn": "npx run-with-testrpc --testrpc-cmd ./scripts/hardhat-node",
+    "test": "yarn run-with-gsn 'npx hardhat test test/test.js'"
   },
   "repository": {
     "type": "git",
@@ -30,14 +31,21 @@
     "hardhat": "^2.0.4",
     "prettier": "^2.2.1",
     "prettier-plugin-solidity": "^1.0.0-beta.1",
+    "run-with-testrpc": "^0.3.1",
     "solhint": "^3.3.2",
     "solhint-plugin-prettier": "0.0.5",
     "solidity-coverage": "^0.7.13"
   },
   "dependencies": {
     "@opengsn/contracts": "^2.2.6",
+    "@opengsn/dev": "^2.2.6",
+    "@opengsn/gsn": "^2.1.0",
+    "@opengsn/provider": "^2.2.6",
     "@openzeppelin/contracts": "^4.6.0",
     "@uniswap/v2-core": "^1.0.1",
-    "@uniswap/v2-periphery": "^1.1.0-beta.0"
+    "@uniswap/v2-periphery": "^1.1.0-beta.0",
+    "@uniswap/v3-core": "^1.0.1",
+    "@uniswap/v3-periphery": "^1.4.1",
+    "web3-providers-http": "^1.7.3"
   }
 }

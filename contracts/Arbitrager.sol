@@ -12,9 +12,13 @@ import "./libraries/ArbitragerMathLibrary.sol";
 
 contract Arbitrager {
     IWETH public immutable weth;
-
+    uint256 public gasUsed;
     constructor(address weth_) {
         weth = IWETH(weth_);
+    }
+
+    function setGasUsed(uint256 amount) external {
+        gasUsed = amount;
     }
 
     receive() external payable { }
@@ -68,8 +72,7 @@ contract Arbitrager {
         _swap(factoryB, amountsB, pathB, address(this));
         weth.withdraw(amountsB[1]);
         TransferHelper.safeTransferETH(msg.sender, amountsB[1]);
-        //gas cost of this function is 302534
-        require(amountsB[1] > amountsA[0] + 302534 * tx.gasprice, "No profit");
+        require(amountsB[1] > amountsA[0] + gasUsed * tx.gasprice, "No profit");
     }
 
     // **** SWAP ****

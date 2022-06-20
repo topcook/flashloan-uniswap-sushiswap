@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.6;
 
+import "@opengsn/contracts/src/BaseRelayRecipient.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol";
 import "@uniswap/v2-periphery/contracts/interfaces/IWETH.sol";
 import "@uniswap/v2-core/contracts/interfaces/IERC20.sol";
@@ -12,15 +13,22 @@ import "hardhat/console.sol";
 import "./libraries/UniswapV2Library.sol";
 import "./libraries/ArbitragerMathLibrary.sol";
 
-contract AdvancedArbitrager is IUniswapV2Callee, Ownable {
+contract AdvancedArbitrager is IUniswapV2Callee, BaseRelayRecipient {
     IWETH public immutable weth;
     uint256 public fee = 3;
+    address public owner;
     //user => token => amount
     mapping(address => mapping(address => uint256)) profits; //sharing of profits
 
-    constructor(address weth_) {
+    constructor(address weth_, address forwarder_) {
+        owner = _msgSender();
         weth = IWETH(weth_);
+        _setTrustedForwarder(forwarder_);
     }
+
+    function versionRecipient() external override pure returns (string memory) {
+		return "2.2.1";
+	}
 
     receive() external payable {}
 
@@ -86,8 +94,8 @@ contract AdvancedArbitrager is IUniswapV2Callee, Ownable {
 
         // //
         // // store profits to profit address
-        profits[msg.sender][remainToken] += ((y - z - 1) * fee) / 100;
-        profits[owner()][remainToken] += ((y - z - 1) * (100 - fee)) / 100;
+        profits[_msgSender()][remainToken] += ((y - z - 1) * fee) / 100;
+        profits[owner][remainToken] += ((y - z - 1) * (100 - fee)) / 100;
     }
 
     function uniswapV2Call(
