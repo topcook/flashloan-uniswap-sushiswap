@@ -1,5 +1,4 @@
 const { expect } = require("chai");
-const {providers,ContractFactory} = require('ethers')
 const { waffle, ethers } = require("hardhat");
 const { constants, getSigners, Contract } = ethers;
 const { WeiPerEther } = constants;
@@ -9,12 +8,6 @@ const WETH9 = require("@uniswap/v2-periphery/build/WETH9.json")
 const UniswapV2Router = require("@uniswap/v2-periphery/build/UniswapV2Router01.json")
 const UniswapV2Factory = require("@uniswap/v2-core/build/UniswapV2Factory.json")
 const UniswapV2Pair = require("@uniswap/v2-core/build/UniswapV2Pair.json")
-
-const { RelayProvider } = require('@opengsn/provider')
-const { GsnTestEnvironment } = require('@opengsn/dev')
-
-const Web3HttpProvider = require('web3-providers-http')
-const AdvancedArbitrager = require('../artifacts/contracts/AdvancedArbitrager.sol/AdvancedArbitrager')
 
 describe("Arbitrager", function () {
   let owner,
@@ -76,16 +69,16 @@ describe("Arbitrager", function () {
     arbitrager = await Arbitrager.deploy(weth.address);
     await arbitrager.deployed();
     const AdvancedArbitrager = await ethers.getContractFactory("AdvancedArbitrager");
-    advancedAbitrager = await AdvancedArbitrager.deploy(weth.address, weth.address);
+    advancedAbitrager = await AdvancedArbitrager.deploy(weth.address, weth.address, weth.address);
     await advancedAbitrager.deployed();
 
-    await sushiRouter.swapExactETHForTokens(0, [weth.address, token.address], owner.address, 2655527338, { value: ethers.utils.parseEther("0.6") });
+    await sushiRouter.swapExactETHForTokens(0, [weth.address, token.address], owner.address, 2655527338, { value: ethers.utils.parseEther("1") });
   });
 
   describe("Main Task", function () {
     const gasprice = ethers.BigNumber.from("1111043189");
     const gas = ethers.BigNumber.from("301443");
-    it("Analyze arbitrager", async function () {  
+    it("gas estimation, price disparity, amount of ETH to maximize profit", async function () {  
       const consoleLogs = []
       const uReserve = await uniswapPair.getReserves();
       const sReserve = await sushiPair.getReserves();
@@ -150,11 +143,12 @@ describe("Arbitrager", function () {
           } else {
             const estimation = await arbitrager.estimateGas.arbitrage(token.address, result.x.gt(0) ? uniswapFactory.address : sushiFactory.address, result.x.gt(0) ? sushiFactory.address : uniswapFactory.address, { value: result.x });
             await arbitrager.setGasUsed(estimation);
-            consoleLogs.push(`Gas estimation: ${ethers.BigNumber.from(estimation).toNumber()}`);
             const bal0 = ethers.utils.formatEther(await ethers.provider.getBalance(trader.address));
             await arbitrager.connect(trader).arbitrage(token.address, result.x.gt(0) ? uniswapFactory.address : sushiFactory.address, result.x.gt(0) ? sushiFactory.address : uniswapFactory.address, { value: result.x });
             const bal1 = ethers.utils.formatEther(await ethers.provider.getBalance(trader.address))
             consoleLogs.push(`Actual Profit: ${bal1 - bal0}`);
+            consoleLogs.push(`Gas estimation: ${ethers.BigNumber.from(estimation).toNumber()}`);
+            consoleLogs.push(`ETH to maximize profit: ${ethers.utils.formatUnits(result.z.mul(signChange))}`);
             expect(bal1-bal0).to.be.above(0);
           }
         } else {
@@ -179,49 +173,16 @@ describe("Arbitrager", function () {
     })
   })
   describe("Additional Challenges", function () {
-    it("Arbitrage ETH and TOKEN", async function () {
+    it("support arbitrary token pairs, flash swap", async function () {
       await advancedAbitrager.connect(trader).arbitrage(
         token.address,
         weth.address,
-        uniswapPair.address, // sushiswap
+        uniswapPair.address,
         sushiPair.address
       );
     });
-    describe("GSN Test", function() {
-      let wrappedAbitrager;
-      
-      before("Installing GSN Environment", async function() {
-
-        let env = await GsnTestEnvironment.startGsn('localhost')
-
-        const { relayHubAddress, forwarderAddress } = env.contractsDeployment
-        console.log("forwarderAddress", forwarderAddress)
-
-        //deploy paymaster
-        const TokenPaymaster = await ethers.getContractFactory("TokenPaymaster");
-        const paymaster = await TokenPaymaster.deploy([uniswapRouter.address, sushiRouter.address], weth.address);
-        await paymaster.deployed();
-        await paymaster.setRelayHub(relayHubAddress)
-        await paymaster.setTrustedForwarder(forwarderAddress)
-        
-        //deploy abitrager
-        const web3provider = new Web3HttpProvider('http://localhost:8545')
-        const deploymentProvider= new providers.Web3Provider(web3provider)
-        const factory = new ContractFactory(AdvancedArbitrager.abi, AdvancedArbitrager.bytecode, deploymentProvider.getSigner())
-        wrappedAbitrager = await factory.deploy(weth.address, forwarderAddress)
-        await wrappedAbitrager.deployed()
-        const config = {
-          // loggerConfiguration: { logLevel: 'error'},
-          paymasterAddress: paymaster.address,
-          auditorsCount: 0
-        }
-        let gsnProvider = RelayProvider.newProvider({provider: web3provider, config})
-        await gsnProvider.init()
-
-      })
-      it("test", async function() {
-
-      })
+    it("profit-sharing", async () => {
+      expect(Number(ethers.utils.formatEther(await advancedAbitrager.profits(trader.address, weth.address)))).to.above(0)
     })
   })
 

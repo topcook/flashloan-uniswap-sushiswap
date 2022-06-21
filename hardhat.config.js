@@ -20,8 +20,8 @@ module.exports = {
   networks: {
     local: {
       url: 'http://localhost:8545',
-      gas: 1e8,
-      blockGasLimit: 1e8
+      // gas: 1e8,
+      // blockGasLimit: 1e8
     },
   },
   solidity:  {

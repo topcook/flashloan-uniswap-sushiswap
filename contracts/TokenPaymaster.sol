@@ -10,6 +10,7 @@ import "@opengsn/contracts/src/BasePaymaster.sol";
 
 import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
 import "@uniswap/v2-periphery/contracts/interfaces/IWETH.sol";
+import "./interfaces/IArbitrager.sol";
 
 /**
  * A Token-based paymaster.
@@ -21,9 +22,8 @@ import "@uniswap/v2-periphery/contracts/interfaces/IWETH.sol";
 contract TokenPaymaster is BasePaymaster {
 
     function versionPaymaster() external override virtual view returns (string memory){
-        return "3.0.0-alpha.5+opengsn.token.ipaymaster";
+        return "2.2.1";
     }
-
 
     IUniswapV2Router02[] public uniswaps;
     // IERC20[] public tokens;
@@ -66,14 +66,19 @@ contract TokenPaymaster is BasePaymaster {
     }
 
     function _getToken(bytes memory paymasterData) internal view returns (IERC20 token, IUniswapV2Router02 uniswap) {
-        (uniswap, token) = abi.decode(paymasterData, (IUniswapV2Router02, IERC20));
-        require(supportedUniswaps[uniswap], "unsupported token uniswap");
-        // token = IERC20(uniswap.tokenAddress());
+        (address _token, address _uniswap) = abi.decode(paymasterData, (address, address));
+        (token, uniswap) = (IERC20(_token), IUniswapV2Router02(_uniswap));
+        require(supportedUniswaps[uniswap], "unsupported uniswap");
     }
+
     function _getAmountIn(IUniswapV2Router02 uniswap, IERC20 token, uint ethCharge) private view returns(uint) {
-        address[] memory path = new address[](2);
-        (path[0], path[1]) = (address(token), address(weth));
-        return uniswap.getAmountsIn(ethCharge, path)[0];
+        if(address(token) == address(weth)) {
+            return ethCharge;
+        } else {
+            address[] memory path = new address[](2);
+            (path[0], path[1]) = (address(token), address(weth));
+            return uniswap.getAmountsIn(ethCharge, path)[0];
+        }
     }
 
     function _calculatePreCharge(
@@ -109,36 +114,42 @@ contract TokenPaymaster is BasePaymaster {
         (IERC20 token, IUniswapV2Router02 uniswap) = _getToken(relayRequest.relayData.paymasterData);
         (address payer, uint256 tokenPrecharge) = _calculatePreCharge(token, uniswap, relayRequest, maxPossibleGas);
         token.transferFrom(payer, address(this), tokenPrecharge);
-        return (abi.encode(payer, tokenPrecharge, token, uniswap), false);
+        return (abi.encode(payer, tokenPrecharge, token, uniswap, relayRequest.request.from), false);
     }
 
     function postRelayedCall(
         bytes calldata context,
-        bool,
+        bool success,
         uint256 gasUseWithoutPost,
         GsnTypes.RelayData calldata relayData
     )
     external override virtual
     {
-        (address payer, uint256 tokenPrecharge, IERC20 token, IUniswapV2Router02 uniswap) = abi.decode(context, (address, uint256, IERC20, IUniswapV2Router02));
-        _postRelayedCallInternal(payer, tokenPrecharge, 0, gasUseWithoutPost, relayData, token, uniswap);
+        (address payer, uint256 tokenPrecharge, IERC20 token, IUniswapV2Router02 uniswap, address from) = abi.decode(context, (address, uint256, IERC20, IUniswapV2Router02, address));
+        _postRelayedCallInternal(success, payer, tokenPrecharge, 0, gasUseWithoutPost, relayData, token, uniswap, from);
     }
 
     function _postRelayedCallInternal(
+        bool success,
         address payer,
         uint256 tokenPrecharge,
         uint256 valueRequested,
         uint256 gasUseWithoutPost,
         GsnTypes.RelayData calldata relayData,
         IERC20 token,
-        IUniswapV2Router02 uniswap
+        IUniswapV2Router02 uniswap,
+        address from
     ) internal {
         uint256 ethActualCharge = relayHub.calculateCharge(gasUseWithoutPost + gasUsedByPost, relayData);
         uint256 tokenActualCharge = _getAmountIn(uniswap, token, valueRequested + ethActualCharge); //uniswap.getTokenToEthOutputPrice(valueRequested + ethActualCharge);
         uint256 tokenRefund = tokenPrecharge - tokenActualCharge;
+        if(success){
+            IArbitrager(payer).cutGsnGas(from, address(token), tokenActualCharge);
+        }
         _refundPayer(payer, token, tokenRefund);
         _depositProceedsToHub(ethActualCharge, tokenActualCharge, uniswap, token);
-        emit TokensCharged(gasUseWithoutPost, gasUsedByPost, ethActualCharge, tokenActualCharge);
+
+        // emit TokensCharged(gasUseWithoutPost, gasUsedByPost, ethActualCharge, tokenActualCharge);
     }
 
     function _refundPayer(
@@ -161,6 +172,10 @@ contract TokenPaymaster is BasePaymaster {
         }
         //uniswap.tokenToEthSwapOutput(ethActualCharge, type(uint256).max, block.timestamp+60*15);
         relayHub.depositFor{value:ethActualCharge}(address(this));
+    }
+
+    function depositEthToHub() external payable{
+        relayHub.depositFor{value:msg.value}(address(this));
     }
 
     event TokensCharged(uint256 gasUseWithoutPost, uint256 gasJustPost, uint256 ethActualCharge, uint256 tokenActualCharge);

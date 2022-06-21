@@ -6,9 +6,10 @@ import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol";
 import "@uniswap/v2-periphery/contracts/interfaces/IWETH.sol";
 import "@uniswap/v2-core/contracts/interfaces/IERC20.sol";
 import "@uniswap/v2-core/contracts/interfaces/IUniswapV2Callee.sol";
+import "@uniswap/v2-periphery/contracts/interfaces/IUniswapV2Router02.sol";
+import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import "@uniswap/lib/contracts/libraries/TransferHelper.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "hardhat/console.sol";
 
 import "./libraries/UniswapV2Library.sol";
 import "./libraries/ArbitragerMathLibrary.sol";
@@ -17,18 +18,32 @@ contract AdvancedArbitrager is IUniswapV2Callee, BaseRelayRecipient {
     IWETH public immutable weth;
     uint256 public fee = 3;
     address public owner;
-    //user => token => amount
-    mapping(address => mapping(address => uint256)) profits; //sharing of profits
+    address public paymaster;
 
-    constructor(address weth_, address forwarder_) {
+    //user => token => amount
+    mapping(address => mapping(address => uint256)) public profits; //sharing of profits
+
+    mapping(address => mapping(address => uint256)) public gasCosts;
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "not an owner");
+        _;
+    }
+
+    constructor(
+        address weth_,
+        address forwarder_,
+        address paymaster_
+    ) {
         owner = _msgSender();
         weth = IWETH(weth_);
         _setTrustedForwarder(forwarder_);
+        paymaster = paymaster_;
     }
 
-    function versionRecipient() external override pure returns (string memory) {
-		return "2.2.1";
-	}
+    function versionRecipient() external pure override returns (string memory) {
+        return "2.2.1";
+    }
 
     receive() external payable {}
 
@@ -142,16 +157,66 @@ contract AdvancedArbitrager is IUniswapV2Callee, BaseRelayRecipient {
         }
     }
 
+    function normalArbitrageUniswapV2ToUniswapV3(
+        address token0,
+        address token1,
+        IUniswapV2Router02 uniV2Router,
+        ISwapRouter uniV3Router,
+        uint256 amountIn
+    ) external {
+        require(amountIn > 0);
+        IERC20(token0).approve(address(uniV2Router), amountIn);
+        address[] memory pathA = new address[](2);
+        (pathA[0], pathA[1]) = (token0, token1);
+        uint256[] memory amounts = uniV2Router.swapExactTokensForTokens(
+            amountIn,
+            type(uint256).max,
+            pathA,
+            address(this),
+            block.timestamp + 60 * 15
+        );
+
+        ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
+            .ExactInputSingleParams(
+                token1,
+                token0,
+                3000,
+                address(this),
+                block.timestamp + 15,
+                amounts[1],
+                0,
+                0
+            );
+        uint256 amountOut = uniV3Router.exactInputSingle(params);
+        require(amountOut > amountIn);
+        profits[msg.sender][token0] += amountOut - amountIn;
+    }
+
     function withdraw(address token, address to) external {
         uint256 profit = profits[to][token];
+        uint256 gasCost = gasCosts[to][token];
         profits[to][token] = 0; // defend reentrancy
-        require(profit > 0, "No profit");
+        gasCosts[to][token] = 0;
+        require(profit > gasCost, "No profit");
 
         if (token == address(weth)) {
             weth.withdraw(profit);
-            TransferHelper.safeTransferETH(to, profit);
+            TransferHelper.safeTransferETH(to, profit - gasCost);
         } else {
-            TransferHelper.safeTransfer(token, to, profit);
+            TransferHelper.safeTransfer(token, to, profit - gasCost);
         }
+    }
+
+    function approveAll(address token, address sender) external onlyOwner {
+        IERC20(token).approve(sender, type(uint256).max);
+    }
+
+    function cutGsnGas(
+        address target,
+        address token,
+        uint256 amount
+    ) external {
+        require(msg.sender == paymaster, "not a paymaster");
+        gasCosts[target][token] = gasCosts[target][token] + amount;
     }
 }
