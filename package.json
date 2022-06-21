@@ -9,7 +9,8 @@
     "lint": "eslint",
     "solhint": "solhint -f table contracts/**/*.sol",
     "test": "npx hardhat test test/test.js",
-    "test-gsn": "npx run-with-hardhat-node 'npx hardhat test test/test-gsn.js'"
+    "test-gsn": "npx hardhat test test/test-gsn.js",
+    "hardhat-node": "npx hardhat node"
   },
   "repository": {
     "type": "git",

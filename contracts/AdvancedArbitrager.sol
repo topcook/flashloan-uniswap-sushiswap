@@ -19,6 +19,7 @@ contract AdvancedArbitrager is IUniswapV2Callee, BaseRelayRecipient {
     uint256 public fee = 3;
     address public owner;
     address public paymaster;
+    bool private locked;
 
     //user => token => amount
     mapping(address => mapping(address => uint256)) public profits; //sharing of profits
@@ -28,6 +29,13 @@ contract AdvancedArbitrager is IUniswapV2Callee, BaseRelayRecipient {
     modifier onlyOwner() {
         require(msg.sender == owner, "not an owner");
         _;
+    }
+
+    modifier lock() {
+        require(!locked, "LOK");
+        locked = true;
+        _;
+        locked = false;
     }
 
     constructor(
@@ -165,6 +173,7 @@ contract AdvancedArbitrager is IUniswapV2Callee, BaseRelayRecipient {
         uint256 amountIn
     ) external {
         require(amountIn > 0);
+        //use token of this contract for arbitrager
         IERC20(token0).approve(address(uniV2Router), amountIn);
         address[] memory pathA = new address[](2);
         (pathA[0], pathA[1]) = (token0, token1);
@@ -176,6 +185,7 @@ contract AdvancedArbitrager is IUniswapV2Callee, BaseRelayRecipient {
             block.timestamp + 60 * 15
         );
 
+        TransferHelper.safeApprove(token1, address(uniV3Router), amounts[1]);
         ISwapRouter.ExactInputSingleParams memory params = ISwapRouter
             .ExactInputSingleParams(
                 token1,
@@ -192,7 +202,7 @@ contract AdvancedArbitrager is IUniswapV2Callee, BaseRelayRecipient {
         profits[msg.sender][token0] += amountOut - amountIn;
     }
 
-    function withdraw(address token, address to) external {
+    function withdraw(address token, address to) external lock {
         uint256 profit = profits[to][token];
         uint256 gasCost = gasCosts[to][token];
         profits[to][token] = 0; // defend reentrancy
